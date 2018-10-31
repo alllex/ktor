@@ -113,6 +113,8 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
     private fun cacheInterceptors(): List<PipelineInterceptor<TSubject, TContext>> {
         val interceptorsQuantity = interceptorsQuantity
         if (interceptorsQuantity == 0) return emptyList()
+
+        val phases = phases
         if (interceptorsQuantity == 1) {
             for (phaseIndex in 0..phases.lastIndex) {
                 val interceptors = phases[phaseIndex].interceptors
