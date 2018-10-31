@@ -100,6 +100,9 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         interceptors = null
     }
 
+    /**
+     * @return `true` if there are no interceptors installed regardless number of phases
+     */
     @InternalAPI
     val isEmpty: Boolean get() = interceptorsQuantity == 0
 
