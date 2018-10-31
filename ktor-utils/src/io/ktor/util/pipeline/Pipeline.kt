@@ -143,7 +143,12 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
 
         phaseContent.interceptors.add(block)
         interceptorsQuantity++
-        interceptors = null
+
+        if (phaseContent.interceptors === interceptors) {
+            // do nothing as it is up-to-date
+        } else {
+            interceptors = null
+        }
     }
 
     companion object {
@@ -165,6 +170,10 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         if (fastPathMerge(from)) {
             return
         }
+
+        interceptors = if (interceptorsQuantity == 0) {
+            from.interceptors()
+        } else null
 
         val fromPhases = from.phases
         for (index in 0..fromPhases.lastIndex) {
@@ -190,8 +199,6 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
                 interceptorsQuantity += fromContent.interceptors.size
             }
         }
-
-        interceptors = null
     }
 
     private fun fastPathMerge(from: Pipeline<TSubject, TContext>): Boolean {
@@ -207,7 +214,7 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
                 phases.add(PhaseContent(fromContent.phase, fromContent.relation, interceptors))
             }
             interceptorsQuantity += from.interceptorsQuantity
-            interceptors = null
+            interceptors = from.interceptors()
             return true
         }
         return false
