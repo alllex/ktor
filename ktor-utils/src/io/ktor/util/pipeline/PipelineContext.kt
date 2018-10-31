@@ -57,8 +57,11 @@ class PipelineContext<TSubject : Any, out TContext : Any> constructor(
     private suspend fun proceedLoop(): TSubject {
         do {
             val index = index
+            if (index == -1) {
+                break
+            }
             val interceptors = interceptors
-            if (interceptors.size == index) {
+            if (index >= interceptors.size) {
                 finish()
                 break
             }
