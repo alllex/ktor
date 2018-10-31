@@ -111,7 +111,14 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
     }
 
     private fun cacheInterceptors(): List<PipelineInterceptor<TSubject, TContext>> {
+        val interceptorsQuantity = interceptorsQuantity
         if (interceptorsQuantity == 0) return emptyList()
+        if (interceptorsQuantity == 1) {
+            for (phaseIndex in 0..phases.lastIndex) {
+                val interceptors = phases[phaseIndex].interceptors
+                if (interceptors.isNotEmpty()) return interceptors
+            }
+        }
 
         val destination = ArrayList<PipelineInterceptor<TSubject, TContext>>(interceptorsQuantity)
         for (phaseIndex in 0..phases.lastIndex) {
