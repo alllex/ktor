@@ -31,7 +31,10 @@ internal class NettyResponsePipeline(private val dst: ChannelHandlerContext,
     private val ready = ArrayDeque<NettyRequestQueue.CallElement>(readyQueueSize)
     private val running = ArrayDeque<NettyRequestQueue.CallElement>(runningQueueSize)
 
-    private val responses = launch(dst.executor().asCoroutineDispatcher() + ResponsePipelineCoroutineName, start = CoroutineStart.UNDISPATCHED) {
+    private val responses = launch(
+        dst.executor().asCoroutineDispatcher() + ResponsePipelineCoroutineName,
+        start = CoroutineStart.UNDISPATCHED
+    ) {
         try {
             processJobs()
         } catch (t: Throwable) {
@@ -116,7 +119,7 @@ internal class NettyResponsePipeline(private val dst: ChannelHandlerContext,
 
     private fun hasNextResponseMessage(): Boolean {
         tryFill()
-        return running.isNotEmpty() && running.peekFirst().call.response.responseMessage.isCompleted
+        return running.peekFirst()?.isCompleted == true
     }
 
     @Suppress("NOTHING_TO_INLINE")
