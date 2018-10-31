@@ -129,20 +129,24 @@ internal class NettyResponsePipeline(private val dst: ChannelHandlerContext,
         try {
             processCall(call)
         } catch (actualException: Throwable) {
-            val t = when {
-                actualException is IOException && actualException !is ChannelIOException -> ChannelWriteException(exception = actualException)
-                else -> actualException
-            }
-
-            call.response.responseChannel.cancel(t)
-            call.responseWriteJob.cancel()
-            call.response.cancel()
-            call.dispose()
-            responses.cancel()
-            requestQueue.cancel()
+            processCallFailed(call, actualException)
         } finally {
             call.responseWriteJob.cancel()
         }
+    }
+
+    private fun processCallFailed(call: NettyApplicationCall, actualException: Throwable) {
+        val t = when {
+            actualException is IOException && actualException !is ChannelIOException -> ChannelWriteException(exception = actualException)
+            else -> actualException
+        }
+
+        call.response.responseChannel.cancel(t)
+        call.responseWriteJob.cancel()
+        call.response.cancel()
+        call.dispose()
+        responses.cancel()
+        requestQueue.cancel()
     }
 
     private fun processUpgrade(responseMessage: Any): ChannelFuture {
