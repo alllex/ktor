@@ -21,7 +21,7 @@ class PipelineContractsTest {
         assertTrue { first.isEmpty }
         assertTrue { second.isEmpty }
 
-        assertSame(first.interceptors(), second.interceptors())
+        assertSame(first.interceptorsForTests(), second.interceptorsForTests())
     }
 
     @Test
@@ -33,8 +33,8 @@ class PipelineContractsTest {
 
         second.merge(first)
 
-        assertSame(first.interceptors(), second.interceptors())
-        assertSame(first.interceptors(), first.phaseInterceptors(phase1))
+        assertSame(first.interceptorsForTests(), second.interceptorsForTests())
+        assertSame(first.interceptorsForTests(), first.phaseInterceptors(phase1))
     }
 
     @Test
@@ -48,9 +48,60 @@ class PipelineContractsTest {
 
         first.intercept(phase1, interceptor2)
 
-        assertNotSame(first.interceptors(), second.interceptors())
+        assertNotSame(first.interceptorsForTests(), second.interceptorsForTests())
         assertTrue { interceptor2 !in second.phaseInterceptors(phase1) }
-        assertTrue { interceptor2 !in second.interceptors() }
+        assertTrue { interceptor2 !in second.interceptorsForTests() }
+    }
+
+    @Test
+    fun testLastPhase() {
+        val first = Pipeline<Unit, Unit>(phase1, phase2)
+        first.intercept(phase1, interceptor1)
+        first.intercept(phase2, interceptor2)
+
+        val before = first.interceptorsForTests()
+
+        first.intercept(phase2, interceptor2)
+        // adding an interceptor to the last phase shouldn't reallocate unshared list
+
+        val after = first.interceptorsForTests()
+
+        assertSame(before, after)
+
+        // intercepting earlier phase should
+
+        first.intercept(phase1, interceptor1)
+
+        assertNotSame(before, first.interceptorsForTests())
+
+        val second = Pipeline<Unit, Unit>(phase1, phase2)
+        second.merge(first)
+    }
+
+    @Test
+    fun testLastPhaseThenMerge() {
+        val first = Pipeline<Unit, Unit>(phase1, phase2)
+        first.intercept(phase1, interceptor1)
+        first.intercept(phase2, interceptor2)
+
+        val before = first.interceptorsForTests()
+
+        first.intercept(phase2, interceptor2)
+        // adding an interceptor to the last phase shouldn't reallocate unshared list
+
+        val after = first.interceptorsForTests()
+
+        assertSame(before, after)
+
+        val second = Pipeline<Unit, Unit>(phase1, phase2)
+        second.merge(first)
+
+        // it should be shared during merge
+        assertSame(before, second.interceptorsForTests())
+
+        // intercepting first should reallocate
+        first.intercept(phase2, interceptor2)
+        assertNotSame(first.interceptorsForTests(), second.interceptorsForTests())
     }
 
     private fun Pipeline<Unit, Unit>.createContext() = createContext(Unit, Unit, EmptyCoroutineContext)
