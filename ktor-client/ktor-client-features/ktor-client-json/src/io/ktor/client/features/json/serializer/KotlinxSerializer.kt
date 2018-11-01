@@ -47,14 +47,14 @@ class KotlinxSerializer : JsonSerializer {
 
 
     override fun write(data: Any): OutgoingContent {
-        val content = JSON.stringify(lookupSerializer(data::class), data)
+        val content = JSON.nonstrict.stringify(lookupSerializer(data::class), data)
         return TextContent(content, ContentType.Application.Json)
     }
 
     override suspend fun read(type: TypeInfo, response: HttpResponse): Any {
         val mapper = lookupSerializer(type.type)
         val text = response.readText()
-        return JSON.parse(mapper, text)
+        return JSON.nonstrict.parse(mapper, text)
     }
 
     private fun lookupSerializer(type: KClass<*>): KSerializer<Any> {

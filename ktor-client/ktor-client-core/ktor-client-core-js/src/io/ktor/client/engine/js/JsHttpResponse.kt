@@ -26,7 +26,7 @@ class JsHttpResponse(
 
     override val headers: Headers = Headers.build {
         response.headers.asDynamic().forEach { key: String, value: String ->
-            append(key, value)
+            append(value, key)
         }
 
         Unit
