@@ -1,14 +1,18 @@
 package io.ktor.server.netty
 
 import io.ktor.application.*
+import io.ktor.response.*
+import io.ktor.routing.*
 import io.ktor.server.engine.*
 import io.ktor.util.*
+import io.ktor.util.pipeline.*
 import io.netty.bootstrap.*
 import io.netty.channel.*
 import io.netty.channel.nio.*
 import io.netty.channel.socket.nio.*
 import kotlinx.coroutines.*
 import io.netty.handler.codec.http.*
+import java.lang.UnsupportedOperationException
 import java.util.concurrent.*
 
 /**
@@ -93,8 +97,25 @@ class NettyApplicationEngine(environment: ApplicationEngineEnvironment, configur
         }
     }
 
+    init {
+        val afterCall = PipelinePhase("After")
+        pipeline.insertPhaseAfter(EnginePipeline.Call, afterCall)
+        pipeline.intercept(afterCall) {
+            (call as? NettyApplicationCall)?.finish()
+        }
+    }
+
     override fun start(wait: Boolean): NettyApplicationEngine {
         environment.start()
+        environment.application.sendPipeline.intercept(ApplicationSendPipeline.Engine) {
+            val call = call
+            when (call) {
+                is RoutingApplicationCall -> (call.call.response as BaseApplicationResponse).respond(subject)
+                is BaseApplicationCall -> (call.response as BaseApplicationResponse).respond(subject)
+                else -> throw UnsupportedOperationException("Unsupported response kind")
+            }
+        }
+
         channels = bootstraps.zip(environment.connectors)
             .map { it.first.bind(it.second.host, it.second.port) }
             .map { it.sync().channel() }

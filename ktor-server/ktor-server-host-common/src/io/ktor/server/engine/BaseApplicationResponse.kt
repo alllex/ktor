@@ -6,6 +6,7 @@ import io.ktor.http.content.*
 import io.ktor.features.*
 import io.ktor.http.*
 import io.ktor.response.*
+import io.ktor.util.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.io.*
 import kotlinx.io.pool.*
@@ -26,24 +27,17 @@ abstract class BaseApplicationResponse(override val call: ApplicationCall) : App
     }
 
     private var responded = false
+
     final override val pipeline = ApplicationSendPipeline().apply {
         merge(call.application.sendPipeline)
-        intercept(ApplicationSendPipeline.Engine) {
-            if (responded)
-                throw ResponseAlreadySentException()
-            val response = subject
-            if (response is OutgoingContent) {
-                respondOutgoingContent(response)
-            } else {
-                throw IllegalArgumentException("Response pipeline couldn't transform '${response.javaClass}' to the OutgoingContent")
-            }
-        }
     }
 
     /**
      * Commit header values and status and pass them to the underlying engine
      */
     protected fun commitHeaders(content: OutgoingContent) {
+        if (responded)
+            throw BaseApplicationResponse.ResponseAlreadySentException()
         responded = true
 
         var transferEncodingSet = false
@@ -89,6 +83,15 @@ abstract class BaseApplicationResponse(override val call: ApplicationCall) : App
                 connection.equals("close", true) -> header("Connection", "close")
                 connection.equals("keep-alive", true) -> header("Connection", "keep-alive")
             }
+        }
+    }
+
+    @InternalAPI
+    suspend fun respond(response: Any) {
+        if (response is OutgoingContent) {
+            respondOutgoingContent(response)
+        } else {
+            throw IllegalArgumentException("Response pipeline couldn't transform '${response.javaClass}' to the OutgoingContent")
         }
     }
 

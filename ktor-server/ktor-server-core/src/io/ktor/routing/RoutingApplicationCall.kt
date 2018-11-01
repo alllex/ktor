@@ -10,7 +10,7 @@ import io.ktor.util.*
  * Represents an application call being handled by [Routing]
  * @property route is the selected route
  */
-class RoutingApplicationCall(private val call: ApplicationCall,
+class RoutingApplicationCall(val call: ApplicationCall,
                              val route: Route,
                              receivePipeline: ApplicationReceivePipeline,
                              responsePipeline: ApplicationSendPipeline,
