@@ -62,6 +62,11 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
 
         fun addTo(destination: PhaseContent<TSubject, Call>) {
             if (isEmpty) return
+            if (destination.isEmpty) {
+                destination.interceptors = sharedInterceptors()
+                destination.shared = true
+                return
+            }
 
             if (destination.shared) {
                 destination.copyInterceptors()
