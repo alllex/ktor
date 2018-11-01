@@ -21,7 +21,13 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
      * Executes this pipeline in the given [context] and with the given [subject]
      */
     suspend fun execute(context: TContext, subject: TSubject): TSubject =
-            PipelineContext(context, interceptors(), subject, coroutineContext).proceed()
+            createContext(context, subject, coroutineContext).proceed()
+
+    internal fun createContext(
+        context: TContext,
+        subject: TSubject, coroutineContext: CoroutineContext
+    ): PipelineContext<TSubject, TContext> =
+        PipelineContext(context, interceptors(), subject, coroutineContext)
 
     private class PhaseContent<TSubject : Any, Call : Any>(
         val phase: PipelinePhase,
@@ -56,6 +62,9 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
     private val phases = phases.mapTo(ArrayList<PhaseContent<TSubject, TContext>>(phases.size)) {
         PhaseContent(it, PipelinePhaseRelation.Last, arrayListOf())
     }
+
+    internal fun phaseInterceptors(phase: PipelinePhase): List<PipelineInterceptor<TSubject, TContext>> =
+        phases.first { it.phase == phase }.interceptors
 
     private var interceptorsQuantity = 0
 
@@ -106,13 +115,16 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
     @InternalAPI
     val isEmpty: Boolean get() = interceptorsQuantity == 0
 
-    private fun interceptors(): List<PipelineInterceptor<TSubject, TContext>> {
-        return interceptors ?: cacheInterceptors()
+    internal fun interceptors(): List<PipelineInterceptor<TSubject, TContext>> {
+        return interceptors?.takeIf { interceptorsQuantity == it.size } ?: cacheInterceptors()
     }
 
     private fun cacheInterceptors(): List<PipelineInterceptor<TSubject, TContext>> {
         val interceptorsQuantity = interceptorsQuantity
-        if (interceptorsQuantity == 0) return emptyList()
+        if (interceptorsQuantity == 0) {
+            interceptors = emptyList()
+            return emptyList()
+        }
 
         val phases = phases
         if (interceptorsQuantity == 1) {
