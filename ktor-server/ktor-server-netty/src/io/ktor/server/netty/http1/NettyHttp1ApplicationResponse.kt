@@ -25,7 +25,7 @@ internal class NettyHttp1ApplicationResponse(call: NettyApplicationCall,
 
     override fun setStatus(statusCode: HttpStatusCode) {
         val statusCodeInt = statusCode.value
-        val cached = if (statusCodeInt in 1..999) responseStatusCache[statusCodeInt] else null
+        val cached = if (statusCodeInt in 1..responseStatusCache.lastIndex) responseStatusCache[statusCodeInt] else null
 
         responseStatus = cached?.takeIf { cached.reasonPhrase() == statusCode.description }
                 ?: HttpResponseStatus(statusCode.value, statusCode.description)
