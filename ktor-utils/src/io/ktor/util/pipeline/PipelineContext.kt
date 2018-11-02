@@ -49,18 +49,17 @@ interface PipelineExecutor<R> {
 
 internal fun <TSubject : Any, TContext : Any> pipelineExecutorFor(
     context: TContext,
-    interceptors: List<PipelineInterceptorRaw<TSubject, TContext>>,
+    interceptors: List<PipelineInterceptor<TSubject, TContext>>,
     subject: TSubject,
     coroutineContext: CoroutineContext
 ): PipelineExecutor<TSubject> {
-    return SuspendFunctionGun(subject, context, interceptors).apply {
-    }
+    return SuspendFunctionGun(subject, context, interceptors)
 }
 
 private class SuspendFunctionGun<TSubject : Any, TContext : Any>(
     initial: TSubject,
     override val context: TContext,
-    private val blocks: List<PipelineInterceptorRaw<TSubject, TContext>>
+    private val blocks: List<PipelineInterceptor<TSubject, TContext>>
 ) : PipelineContext<TSubject, TContext>, PipelineExecutor<TSubject>, CoroutineScope {
 
     override val coroutineContext: CoroutineContext get() = continuation.context
@@ -82,38 +81,12 @@ private class SuspendFunctionGun<TSubject : Any, TContext : Any>(
 
         override fun resumeWith(result: Result<Unit>) {
             if (result.isFailure) {
-                suspended = true
                 resumeRootWith(Result.failure(result.exceptionOrNull()!!))
                 return
             }
 
-            do {
-                val index = index  // it is important to read index every time
-                if (index == blocks.size) {
-                    if (suspended) {
-                        resumeRootWith(Result.success(subject))
-                    }
-                    return
-                }
-
-                this@SuspendFunctionGun.index = index + 1  // it is important to increase it before function invocation
-                val next = blocks[index]
-
-                try {
-                    val me = this@SuspendFunctionGun
-                    val rc = next.startCoroutineUninterceptedOrReturn(me, me.continuation)
-                    if (rc === COROUTINE_SUSPENDED) {
-                        suspended = true
-                        return
-                    }
-                } catch (cause: Throwable) {
-                    suspended = true
-                    resumeRootWith(Result.failure(cause))
-                    return
-                }
-            } while (true)
+            loop(false)
         }
-
     }
 
     override var subject: TSubject = initial
@@ -121,7 +94,6 @@ private class SuspendFunctionGun<TSubject : Any, TContext : Any>(
 
     private var rootContinuation: Any? = null
     private var index = 0
-    private var suspended = false
 
     override fun finish() {
         index = blocks.size
@@ -132,16 +104,12 @@ private class SuspendFunctionGun<TSubject : Any, TContext : Any>(
 
         addContinuation(continuation)
 
-        this.continuation.resume(Unit)
-
-        when {
-            suspended -> COROUTINE_SUSPENDED
-            index == blocks.size -> {
-                rootContinuation = null
-                subject
-            }
-            else -> COROUTINE_SUSPENDED
+        if (loop(true)) {
+            discardLastRootContinuation()
+            return@suspendCoroutineUninterceptedOrReturn subject
         }
+
+        COROUTINE_SUSPENDED
     }
 
     override suspend fun proceedWith(subject: TSubject): TSubject {
@@ -155,9 +123,40 @@ private class SuspendFunctionGun<TSubject : Any, TContext : Any>(
         subject = initial
 
         if (rootContinuation != null) throw IllegalStateException("Already started")
-        suspended = false
 
         return proceed()
+    }
+
+    /**
+     * @return `true` if it is possible to return result immediately
+     */
+    private fun loop(direct: Boolean): Boolean {
+        do {
+            val index = index  // it is important to read index every time
+            if (index == blocks.size) {
+                if (!direct) {
+                    resumeRootWith(Result.success(subject))
+                    return false
+                }
+
+                return true
+            }
+
+            this@SuspendFunctionGun.index = index + 1  // it is important to increase it before function invocation
+            val next = blocks[index]
+
+            try {
+                val me = this@SuspendFunctionGun
+
+                val rc = next.startCoroutineUninterceptedOrReturn3(me, me.subject, me.continuation)
+                if (rc === COROUTINE_SUSPENDED) {
+                    return false
+                }
+            } catch (cause: Throwable) {
+                resumeRootWith(Result.failure(cause))
+                return false
+            }
+        } while (true)
     }
 
     private fun resumeRootWith(result: Result<TSubject>) {
@@ -178,6 +177,23 @@ private class SuspendFunctionGun<TSubject : Any, TContext : Any>(
         } as Continuation<TSubject>
 
         next.resumeWith(result)
+    }
+
+    private fun discardLastRootContinuation() {
+        val rootContinuation = rootContinuation
+
+        @Suppress("UNCHECKED_CAST")
+        when (rootContinuation) {
+            null -> throw IllegalStateException("No more continuations to resume")
+            is Continuation<*> -> {
+                this.rootContinuation = null
+            }
+            is ArrayList<*> -> {
+                if (rootContinuation.isEmpty()) throw IllegalStateException("No more continuations to resume")
+                rootContinuation.removeAt(rootContinuation.lastIndex)
+            }
+            else -> unexpectedRootContinuationValue(rootContinuation)
+        }
     }
 
     private fun addContinuation(continuation: Continuation<TSubject>) {
@@ -206,5 +222,19 @@ private class SuspendFunctionGun<TSubject : Any, TContext : Any>(
     private fun unexpectedRootContinuationValue(rootContinuation: Any?): Nothing {
         throw IllegalStateException("Unexpected rootContinuation content: $rootContinuation")
     }
+}
+
+@Suppress("NOTHING_TO_INLINE")
+private inline fun <R, A>
+    (suspend R.(A) -> Unit).startCoroutineUninterceptedOrReturn3(
+    receiver: R,
+    arg: A,
+    continuation: Continuation<Unit>
+): Any? {
+
+    @Suppress("UNCHECKED_CAST")
+    val function = (this as Function3<R, A, Continuation<Unit>, Any?>)
+
+    return function.invoke(receiver, arg, continuation)
 }
 

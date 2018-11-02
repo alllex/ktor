@@ -32,11 +32,11 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
     private class PhaseContent<TSubject : Any, Call : Any>(
         val phase: PipelinePhase,
         val relation: PipelinePhaseRelation,
-        private var interceptors: ArrayList<PipelineInterceptorRaw<TSubject, Call>>
+        private var interceptors: ArrayList<PipelineInterceptor<TSubject, Call>>
     ) {
         @Suppress("UNCHECKED_CAST")
         constructor(phase: PipelinePhase,
-                    relation: PipelinePhaseRelation) : this(phase, relation, SharedArrayList as ArrayList<PipelineInterceptorRaw<TSubject, Call>>) {
+                    relation: PipelinePhaseRelation) : this(phase, relation, SharedArrayList as ArrayList<PipelineInterceptor<TSubject, Call>>) {
             check(SharedArrayList.isEmpty()) { "The shared empty array list has been modified" }
         }
 
@@ -45,14 +45,14 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         val isEmpty: Boolean get() = interceptors.isEmpty()
         val size: Int get() = interceptors.size
 
-        fun addInterceptor(interceptor: PipelineInterceptorRaw<TSubject, Call>) {
+        fun addInterceptor(interceptor: PipelineInterceptor<TSubject, Call>) {
             if (shared) {
                 copyInterceptors()
             }
             interceptors.add(interceptor)
         }
 
-        fun addTo(destination: ArrayList<PipelineInterceptorRaw<TSubject, Call>>) {
+        fun addTo(destination: ArrayList<PipelineInterceptor<TSubject, Call>>) {
             val interceptors = interceptors
             destination.ensureCapacity(destination.size + interceptors.size)
             for (index in 0 until interceptors.size) {
@@ -75,12 +75,12 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
             addTo(destination.interceptors)
         }
 
-        fun sharedInterceptors(): ArrayList<PipelineInterceptorRaw<TSubject, Call>> {
+        fun sharedInterceptors(): ArrayList<PipelineInterceptor<TSubject, Call>> {
             shared = true
             return interceptors
         }
 
-        fun copiedInterceptors(): ArrayList<PipelineInterceptorRaw<TSubject, Call>> = ArrayList(interceptors)
+        fun copiedInterceptors(): ArrayList<PipelineInterceptor<TSubject, Call>> = ArrayList(interceptors)
 
         override fun toString(): String = "Phase `${phase.name}`, $size handlers"
 
@@ -170,7 +170,7 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         return false
     }
 
-    internal fun phaseInterceptors(phase: PipelinePhase): List<PipelineInterceptorRaw<TSubject, TContext>> =
+    internal fun phaseInterceptors(phase: PipelinePhase): List<PipelineInterceptor<TSubject, TContext>> =
         findPhase(phase)?.sharedInterceptors() ?: emptyList()
 
     private var interceptorsQuantity = 0
@@ -222,11 +222,11 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
     /**
      * For tests only
      */
-    internal fun interceptorsForTests(): List<PipelineInterceptorRaw<TSubject, TContext>> {
-        return getInterceptorsUnsafe() ?: cacheInterceptors()
+    internal fun interceptorsForTests(): List<PipelineInterceptor<TSubject, TContext>> {
+        return interceptors ?: cacheInterceptors()
     }
 
-    private fun cacheInterceptors(): List<PipelineInterceptorRaw<TSubject, TContext>> {
+    private fun cacheInterceptors(): List<PipelineInterceptor<TSubject, TContext>> {
         val interceptorsQuantity = interceptorsQuantity
         if (interceptorsQuantity == 0) {
             notSharedInterceptorsList(emptyList())
@@ -248,7 +248,7 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
             }
         }
 
-        val destination = ArrayList<PipelineInterceptorRaw<TSubject, TContext>>(interceptorsQuantity)
+        val destination = ArrayList<PipelineInterceptor<TSubject, TContext>>(interceptorsQuantity)
         for (phaseIndex in 0..phases.lastIndex) {
             @Suppress("UNCHECKED_CAST")
             val phase =
@@ -264,21 +264,6 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
      * Adds [block] to the [phase] of this pipeline
      */
     fun intercept(phase: PipelinePhase, block: PipelineInterceptor<TSubject, TContext>) {
-        // TODO make it inline after KT-26658 since 1.3.20
-        interceptRaw(phase) {
-            val subject = subject
-            block(this, subject)
-        }
-    }
-
-    /**
-     * Invoked after an interceptor has been installed
-     */
-    open fun afterIntercepted() {
-    }
-
-    @PublishedApi
-    internal fun interceptRaw(phase: PipelinePhase, block: PipelineInterceptorRaw<TSubject, TContext>) {
         val phaseContent = findPhase(phase)
             ?: throw InvalidPhaseException("Phase $phase was not registered for this pipeline")
 
@@ -292,6 +277,12 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         resetInterceptorsList()
 
         afterIntercepted()
+    }
+
+    /**
+     * Invoked after an interceptor has been installed
+     */
+    open fun afterIntercepted() {
     }
 
     /**
@@ -384,7 +375,7 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
     }
 
     @Volatile
-    private var interceptors: List<PipelineInterceptorRaw<TSubject, TContext>>? = null
+    private var interceptors: List<PipelineInterceptor<TSubject, TContext>>? = null
 
     /**
      * share between pipelines/contexts
@@ -396,9 +387,7 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
      */
     private var interceptorsListSharedPhase: PipelinePhase? = null
 
-    internal fun getInterceptorsUnsafe() = interceptors
-
-    private fun sharedInterceptorsList(): List<PipelineInterceptorRaw<TSubject, TContext>> {
+    private fun sharedInterceptorsList(): List<PipelineInterceptor<TSubject, TContext>> {
         if (interceptors == null) {
             cacheInterceptors()
         }
@@ -412,7 +401,7 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         interceptorsListSharedPhase = null
     }
 
-    private fun notSharedInterceptorsList(list: List<PipelineInterceptorRaw<TSubject, TContext>>) {
+    private fun notSharedInterceptorsList(list: List<PipelineInterceptor<TSubject, TContext>>) {
         interceptors = list
         interceptorsListShared = false
         interceptorsListSharedPhase = null
@@ -430,7 +419,7 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
         this.interceptorsListSharedPhase = null
     }
 
-    private fun tryAddToPhaseFastpath(phase: PipelinePhase, block: PipelineInterceptorRaw<TSubject, TContext>): Boolean {
+    private fun tryAddToPhaseFastpath(phase: PipelinePhase, block: PipelineInterceptor<TSubject, TContext>): Boolean {
         if (phasesRaw.isEmpty()) return false
         if (interceptors == null) return false
 
@@ -458,7 +447,7 @@ open class Pipeline<TSubject : Any, TContext : Any>(vararg phases: PipelinePhase
  * Executes this pipeline
  */
 @Suppress("NOTHING_TO_INLINE")
-suspend inline fun <TContext : Any> Pipeline<Unit, TContext>.execute(context: TContext) = execute(context, Unit)
+suspend inline fun <TContext : Any> Pipeline<Unit, TContext>.execute(context: TContext): Unit = execute(context, Unit)
 
 /**
  * Intercepts an untyped pipeline when the subject is of the given type
@@ -468,8 +457,8 @@ inline fun <reified TSubject : Any, TContext : Any> Pipeline<*, TContext>.interc
     noinline block: suspend PipelineContext<TSubject, TContext>.(TSubject) -> Unit
 ) {
 
-    interceptRaw(phase) interceptor@{
-        val subject = subject as? TSubject ?: return@interceptor
+    intercept(phase) interceptor@{ subject ->
+        subject as? TSubject ?: return@interceptor
         @Suppress("UNCHECKED_CAST")
         val reinterpret = this as? PipelineContext<TSubject, TContext>
         reinterpret?.block(subject)
@@ -480,9 +469,3 @@ inline fun <reified TSubject : Any, TContext : Any> Pipeline<*, TContext>.interc
  * Represents an interceptor type which is a suspend extension function for context
  */
 typealias PipelineInterceptor<TSubject, TContext> = suspend PipelineContext<TSubject, TContext>.(TSubject) -> Unit
-
-/**
- * Represents an interceptor in it's internal form
- */
-@InternalAPI
-typealias PipelineInterceptorRaw<TSubject, TContext> = suspend PipelineContext<TSubject, TContext>.() -> Unit

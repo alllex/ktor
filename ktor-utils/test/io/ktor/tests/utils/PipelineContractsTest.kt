@@ -2,6 +2,7 @@ package io.ktor.tests.utils
 
 import io.ktor.util.pipeline.*
 import kotlin.coroutines.*
+import kotlin.coroutines.intrinsics.*
 import kotlin.test.*
 
 @Suppress("KDocMissingDocumentation")
@@ -160,6 +161,104 @@ class PipelineContractsTest {
     }
 
     @Test
+    fun executePipelineWithSuspension() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+        var continuation: Continuation<Unit>? = null
+
+        pipeline.intercept(phase1) {
+            checkList.add("1")
+        }
+        pipeline.intercept(phase1) {
+            try {
+                checkList.add("2")
+                proceed()
+            } finally {
+                checkList.add("3")
+            }
+        }
+        pipeline.intercept(phase1) {
+            checkList.add("4")
+            suspendCoroutine<Unit> {
+                continuation = it
+            }
+            checkList.add("5")
+        }
+
+        pipeline.execute()
+
+        assertEquals(listOf("1", "2", "4"), checkList)
+
+        continuation!!.resume(Unit)
+        assertEquals(listOf("1", "2", "4", "5", "3", "completed"), checkList)
+    }
+
+    @Test
+    fun executePipelineWithSuspensionAndImmediateResume() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+
+        pipeline.intercept(phase1) {
+            checkList.add("1")
+        }
+        pipeline.intercept(phase1) {
+            try {
+                checkList.add("2")
+                proceed()
+            } finally {
+                checkList.add("3")
+            }
+        }
+        pipeline.intercept(phase1) {
+            checkList.add("4")
+            suspendCoroutineUninterceptedOrReturn<Unit> {
+                it.resume(Unit)
+                COROUTINE_SUSPENDED
+            }
+            checkList.add("5")
+        }
+
+        pipeline.execute()
+
+        assertEquals(listOf("1", "2", "4", "5", "3", "completed"), checkList)
+    }
+
+    @Test
+    fun executePipelineWithSuspensionAndNestedProceed() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+        var continuation: Continuation<Unit>? = null
+
+        pipeline.intercept(phase1) {
+            checkList.add("1")
+        }
+        pipeline.intercept(phase1) {
+            checkList.add("2")
+            suspendCoroutineUninterceptedOrReturn<Unit> {
+                continuation = it
+                COROUTINE_SUSPENDED
+            }
+            checkList.add("3")
+        }
+        pipeline.intercept(phase1) {
+            try {
+                checkList.add("4")
+                proceed()
+            } finally {
+                checkList.add("5")
+            }
+        }
+        pipeline.intercept(phase1) {
+            checkList.add("6")
+        }
+
+        pipeline.execute()
+
+        assertEquals(listOf("1", "2"), checkList)
+
+        continuation!!.resume(Unit)
+
+        assertEquals(listOf("1", "2", "3", "4", "6", "5", "completed"), checkList)
+    }
+
+    @Test
     fun testExecutePipelineTwiceTest() {
         val pipeline = Pipeline<Unit, Unit>(phase1)
 
@@ -179,6 +278,28 @@ class PipelineContractsTest {
         }
 
         pipeline.execute()
+    }
+
+    @Test
+    fun testExecutePipelineCaughtFailureTest() {
+        var caught = false
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+
+        class MyException : Exception()
+
+        pipeline.intercept(phase1) {
+            try {
+                proceed()
+            } catch (expected: MyException) {
+                caught = true
+            }
+        }
+        pipeline.intercept(phase1) {
+            throw MyException()
+        }
+
+        pipeline.execute()
+        assertTrue { caught }
     }
 
     private fun Pipeline<Unit, Unit>.execute() {
