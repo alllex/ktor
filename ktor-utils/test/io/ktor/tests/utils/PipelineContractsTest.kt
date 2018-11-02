@@ -9,8 +9,10 @@ class PipelineContractsTest {
     private var v = 0
     private val phase1 = PipelinePhase("A")
     private val phase2 = PipelinePhase("B")
-    private val interceptor1: PipelineInterceptor<Unit, Unit> = { v = 1 }
-    private val interceptor2: PipelineInterceptor<Unit, Unit> = { v = 2 }
+    private val interceptor1: PipelineInterceptor<Unit, Unit> = { v = 1; checkList.add("1") }
+    private val interceptor2: PipelineInterceptor<Unit, Unit> = { v = 2; checkList.add("2") }
+
+    private val checkList = ArrayList<String>()
 
     @Test
     fun testMergeEmpty() {
@@ -49,8 +51,8 @@ class PipelineContractsTest {
         first.intercept(phase1, interceptor2)
 
         assertNotSame(first.interceptorsForTests(), second.interceptorsForTests())
-        assertTrue { interceptor2 !in second.phaseInterceptors(phase1) }
-        assertTrue { interceptor2 !in second.interceptorsForTests() }
+        second.execute()
+        assertEquals(listOf("1", "completed"), checkList)
     }
 
     @Test
@@ -102,6 +104,91 @@ class PipelineContractsTest {
         // intercepting first should reallocate
         first.intercept(phase2, interceptor2)
         assertNotSame(first.interceptorsForTests(), second.interceptorsForTests())
+    }
+
+    @Test
+    fun executeEmptyPipelineSmokeTest() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+
+        pipeline.execute()
+
+        assertEquals(listOf("completed"), checkList)
+    }
+
+    @Test
+    fun testExecutePipelineSingleSmokeTest() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+
+        pipeline.intercept(phase1, interceptor1)
+        pipeline.execute()
+
+        assertEquals(listOf("1", "completed"), checkList)
+    }
+
+    @Test
+    fun testExecutePipelineSimpleSmokeTest() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+
+        pipeline.intercept(phase1, interceptor1)
+        pipeline.intercept(phase1, interceptor2)
+        pipeline.execute()
+
+        assertEquals(listOf("1", "2", "completed"), checkList)
+    }
+
+    @Test
+    fun executePipelineSmokeTest() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+        pipeline.intercept(phase1) {
+            checkList.add("1")
+        }
+        pipeline.intercept(phase1) {
+            try {
+                checkList.add("2")
+                proceed()
+            } finally {
+                checkList.add("3")
+            }
+        }
+        pipeline.intercept(phase1) {
+            checkList.add("4")
+        }
+
+        pipeline.execute()
+
+        assertEquals(listOf("1", "2", "4", "3", "completed"), checkList)
+    }
+
+    @Test
+    fun testExecutePipelineTwiceTest() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+
+        pipeline.intercept(phase1, interceptor1)
+        pipeline.execute()
+        pipeline.execute()
+
+        assertEquals(listOf("1", "completed", "1", "completed"), checkList)
+    }
+
+    @Test
+    fun testExecutePipelineFailureTest() {
+        val pipeline = Pipeline<Unit, Unit>(phase1)
+
+        pipeline.intercept(phase1) {
+            throw IllegalStateException()
+        }
+
+        pipeline.execute()
+    }
+
+    private fun Pipeline<Unit, Unit>.execute() {
+        val body = suspend {
+            execute(Unit, Unit)
+        }
+
+        body.startCoroutine(Continuation(EmptyCoroutineContext) {
+            checkList.add("completed")
+        })
     }
 
     private fun Pipeline<Unit, Unit>.createContext() = createContext(Unit, Unit, EmptyCoroutineContext)
